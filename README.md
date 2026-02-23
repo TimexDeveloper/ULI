@@ -1,4 +1,3 @@
-```markdown
 # 🛠️ ULI — Universal Linux Installer
 
 <p align="center">
