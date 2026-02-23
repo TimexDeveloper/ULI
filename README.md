@@ -1,3 +1,4 @@
+```markdown
 # 🛠️ ULI — Universal Linux Installer
 
 <p align="center">
@@ -26,10 +27,13 @@
 Откройте терминал в вашем LiveCD и выполните:
 
 ```bash
-curl -sL [https://is.gd/uli-install](https://is.gd/uli-install) | sudo bash
+curl -sL https://is.gd/uli-install | sudo bash
+
 ```
 
 > **Внимание:** Скрипт требует прав **root** для работы с разделами диска и выполнения `chroot`.
+
+---
 
 ## 🏗️ Поддерживаемые дистрибутивы
 
