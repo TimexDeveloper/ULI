@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Linux Installer</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #00ff41;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            text-shadow: 0 0 5px #00ff41;
+        }
+
+        .container {
+            width: 80%;
+            max-width: 800px;
+            border: 1px solid #00ff41;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+        }
+
+        .command-box {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            position: relative;
+            border: 1px dashed #00ff41;
+            margin-top: 20px;
+        }
+
+            .command-box:hover {
+                background: #252525;
+            }
+
+        .copy-hint {
+            font-size: 0.7rem;
+            color: #888;
+            margin-top: 10px;
+        }
+
+        .distros {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .distro-item {
+            border-left: 3px solid #00ff41;
+            padding-left: 10px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>> SYSTEM_INSTALLER_INITIALIZING...</h1>
+        <p>Установка любого дистрибутива одной командой прямо из LiveCD.</p>
+
+        <div class="distros">
+            <div class="distro-item"># Ubuntu (debootstrap)</div>
+            <div class="distro-item"># NixOS (nix-install)</div>
+            <div class="distro-item"># Arch Linux (pacstrap)</div>
+            <div class="distro-item"># Gentoo (stage3)</div>
+        </div>
+
+        <div class="command-box" onclick="copyCommand()">
+            <code id="install-cmd">curl -sL https://is.gd/твой-алиас | sudo bash</code>
+        </div>
+        <p class="copy-hint">Нажми на блок выше, чтобы скопировать команду</p>
+    </div>
+
+    <script>
+        function copyCommand() {
+        const cmd = document.getElementById('install-cmd').innerText;
+        navigator.clipboard.writeText(cmd);
+        alert('Команда скопирована! Вставьте её в терминал вашего LiveCD.');
+        }
+    </script>
+
+</body>
+</html>
