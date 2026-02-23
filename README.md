@@ -75,5 +75,3 @@ curl -sL https://is.gd/uli-install | sudo bash
 <p align="center">
 <i>Разработано с помощью терминала и чистого энтузиазма.</i>
 </p>
-
-```
