@@ -26,7 +26,7 @@
 Откройте терминал в вашем LiveCD и выполните:
 
 ```bash
-curl -sL https://is.gd/uli-install | sudo bash
+curl -sL https://is.gd/uli_install | sudo bash
 
 ```
 
