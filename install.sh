@@ -21,11 +21,14 @@ echo -e "========================================${NC}"
 echo -e "\n${YELLOW}Available drives:${NC}"
 lsblk -dno NAME,SIZE,MODEL | grep -v "loop"
 echo ""
-read -p "Enter disk name (e.g., sda or nvme0n1): " DISK_NAME
+read -p "Enter disk name (e.g. sda or nvme0n1): " INPUT_DISK
+
+# Исправление ввода: убираем /dev/, если пользователь его ввел, и лишние пробелы
+DISK_NAME=$(echo "$INPUT_DISK" | sed 's|/dev/||' | xargs)
 TARGET_DISK="/dev/$DISK_NAME"
 
 if [ ! -b "$TARGET_DISK" ]; then
-    echo -e "${RED}Error: Disk $TARGET_DISK not found!${NC}"
+    echo -e "${RED}Error: Device $TARGET_DISK not found!${NC}"
     exit 1
 fi
 
@@ -34,27 +37,34 @@ echo -e "${RED}WARNING: ALL DATA ON $TARGET_DISK WILL BE DELETED!${NC}"
 read -p "Are you sure? (y/n): " CONFIRM
 [[ $CONFIRM != "y" ]] && exit 1
 
-echo -e "${BLUE}Cleaning disk and creating GPT...${NC}"
+echo -e "${BLUE}Preparing disk...${NC}"
+# Полная очистка
 umount -l ${TARGET_DISK}* 2>/dev/null
+swapoff -a
 wipefs -a "$TARGET_DISK"
 
+# Разметка GPT: 512MB EFI, остальное - Root
 parted -s "$TARGET_DISK" mklabel gpt
 parted -s "$TARGET_DISK" mkpart primary fat32 1MiB 513MiB
 parted -s "$TARGET_DISK" set 1 esp on
 parted -s "$TARGET_DISK" mkpart primary ext4 513MiB 100%
 
-# Partition detection
-if [[ $TARGET_DISK == *"nvme"* ]]; then
+# Ждем, пока ядро обновит таблицу разделов
+udevadm settle
+
+# Определение имен разделов
+if [[ $TARGET_DISK == *"nvme"* ]] || [[ $TARGET_DISK == *"mmcblk"* ]]; then
     BOOT_P="${TARGET_DISK}p1"; ROOT_P="${TARGET_DISK}p2"
 else
     BOOT_P="${TARGET_DISK}1"; ROOT_P="${TARGET_DISK}2"
 fi
 
-sleep 2
+echo -e "${BLUE}Formatting partitions...${NC}"
 mkfs.fat -F32 "$BOOT_P"
 mkfs.ext4 -F "$ROOT_P"
 
 # 3. Mounting
+echo -e "${BLUE}Mounting...${NC}"
 mkdir -p /mnt/uli
 mount "$ROOT_P" /mnt/uli
 mkdir -p /mnt/uli/boot
@@ -64,33 +74,35 @@ mount "$BOOT_P" /mnt/uli/boot
 echo -e "\n${YELLOW}Choose OS to install:${NC}"
 echo "1) Ubuntu (jammy)"
 echo "2) Arch Linux"
+echo "3) NixOS (In development)"
 read -p "Selection: " D_CHOICE
 
 case $D_CHOICE in
     1)
-        echo -e "${BLUE}Installing Ubuntu (this may take 5-10 min)...${NC}"
+        echo -e "${BLUE}Installing Ubuntu...${NC}"
         if ! command -v debootstrap &> /dev/null; then
             apt-get update && apt-get install -y debootstrap
         fi
-        # Реальный процесс установки
         debootstrap --arch amd64 jammy /mnt/uli http://archive.ubuntu.com/ubuntu/
         ;;
     2)
         echo -e "${BLUE}Installing Arch Linux...${NC}"
-        # Проверяем наличие pacman (если мы не в Arch LiveCD, это сложно)
         if command -v pacman &> /dev/null; then
             pacstrap /mnt/uli base linux linux-firmware
         else
-            echo -e "${RED}Error: Arch installation requires pacman in the current LiveCD.${NC}"
+            echo -e "${RED}Error: Arch requires pacman host system.${NC}"
             exit 1
         fi
         ;;
+    3)
+        echo -e "${YELLOW}NixOS module coming soon...${NC}"
+        exit 0
+        ;;
 esac
 
-# 5. Result check
-if [ -f "/mnt/uli/etc/hostname" ] || [ -d "/mnt/uli/bin" ]; then
-    echo -e "\n${GREEN}SUCCESS! System files deployed to /mnt/uli${NC}"
-    echo -e "${YELLOW}Next step: chroot /mnt/uli to set password and grub.${NC}"
+# 5. Finalize
+if [ -d "/mnt/uli/bin" ] || [ -d "/mnt/uli/usr/bin" ]; then
+    echo -e "\n${GREEN}SUCCESS! System deployed to /mnt/uli${NC}"
 else
-    echo -e "\n${RED}INSTALLATION FAILED: Files not found in /mnt/uli${NC}"
+    echo -e "\n${RED}FAILED: Base system not found.${NC}"
 fi
