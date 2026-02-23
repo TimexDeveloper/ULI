@@ -1,117 +1,96 @@
 #!/bin/bash
 
-# Цветовое оформление
+# Цвета
 export GREEN='\033[0;32m'
 export RED='\033[0;31m'
 export BLUE='\033[0;34m'
 export YELLOW='\033[1;33m'
 export NC='\033[0m'
 
-# Проверка на root
+# Проверка прав
 if [ "$EUID" -ne 0 ]; then 
-  echo -e "${RED}Ошибка: Скрипт должен быть запущен от root (sudo)${NC}"
+  echo -e "${RED}Ошибка: Запустите через sudo!${NC}"
   exit 1
 fi
 
+# Очистка экрана и заголовок
 clear
 echo -e "${BLUE}========================================"
 echo -e "   ULI: Universal Linux Installer"
 echo -e "========================================${NC}"
 
-# Функция выбора диска
-select_disk() {
-    echo -e "\n${YELLOW}Доступные накопители:${NC}"
-    lsblk -dno NAME,SIZE,MODEL | grep -v "loop"
-    echo ""
-    read -p "Введите имя диска (например, sda или nvme0n1): " DISK_NAME
-    TARGET_DISK="/dev/$DISK_NAME"
+# 1. Выбор диска
+echo -e "\n${YELLOW}Список дисков:${NC}"
+lsblk -dno NAME,SIZE,MODEL | grep -v "loop"
+echo ""
+read -p "Введите имя диска (например, sda или nvme0n1): " DISK_NAME
+TARGET_DISK="/dev/$DISK_NAME"
 
-    if [ ! -b "$TARGET_DISK" ]; then
-        echo -e "${RED}Ошибка: Устройство $TARGET_DISK не найдено!${NC}"
-        exit 1
-    fi
-}
+if [ ! -b "$TARGET_DISK" ]; then
+    echo -e "${RED}Ошибка: Диск $TARGET_DISK не найден!${NC}"
+    exit 1
+fi
 
-# Функция разметки (базовая GPT/EFI)
-prepare_disk() {
-    echo -e "${YELLOW}ВНИМАНИЕ: Все данные на $TARGET_DISK будут удалены!${NC}"
-    read -p "Продолжить? (y/N): " CONFIRM
-    if [[ ! $CONFIRM =~ ^[Yy]$ ]]; then exit 1; fi
+# 2. Разметка
+echo -e "${RED}ВНИМАНИЕ: $TARGET_DISK будет ПОЛНОСТЬЮ стерт!${NC}"
+read -p "Вы уверены? (y/n): " CONFIRM
+[[ $CONFIRM != "y" ]] && exit 1
 
-    echo -e "${BLUE}Разметка диска...${NC}"
-    # Создание таблицы GPT и разделов: 512MB EFI, остальное Root
-    parted -s "$TARGET_DISK" mklabel gpt
-    parted -s "$TARGET_DISK" mkpart primary fat32 1MiB 513MiB
-    parted -s "$TARGET_DISK" set 1 esp on
-    parted -s "$TARGET_DISK" mkpart primary ext4 513MiB 100%
+# Отмонтируем всё, что могло само примонтироваться
+umount -l ${TARGET_DISK}* 2>/dev/null
 
-    # Определение имен разделов (учет nvme)
-    if [[ $TARGET_DISK == *"nvme"* ]]; then
-        BOOT_PART="${TARGET_DISK}p1"
-        ROOT_PART="${TARGET_DISK}p2"
-    else
-        BOOT_PART="${TARGET_DISK}1"
-        ROOT_PART="${TARGET_DISK}2"
-    fi
+echo -e "${BLUE}Уничтожение старой разметки и создание GPT...${NC}"
+wipefs -a "$TARGET_DISK"
+parted -s "$TARGET_DISK" mklabel gpt
+parted -s "$TARGET_DISK" mkpart primary fat32 1MiB 513MiB
+parted -s "$TARGET_DISK" set 1 esp on
+parted -s "$TARGET_DISK" mkpart primary ext4 513MiB 100%
 
-    echo -e "${BLUE}Форматирование разделов...${NC}"
-    mkfs.fat -F32 "$BOOT_PART"
-    mkfs.ext4 -F "$ROOT_PART"
+# Определение разделов
+if [[ $TARGET_DISK == *"nvme"* ]]; then
+    BOOT_P="${TARGET_DISK}p1"; ROOT_P="${TARGET_DISK}p2"
+else
+    BOOT_P="${TARGET_DISK}1"; ROOT_P="${TARGET_DISK}2"
+fi
 
-    echo -e "${BLUE}Монтирование...${NC}"
-    mount "$ROOT_PART" /mnt
-    mkdir -p /mnt/boot
-    mount "$BOOT_PART" /mnt/boot
-}
+# Ждем появления разделов в системе
+sleep 2
 
-# Меню выбора дистрибутива
-echo -e "\nВыберите систему для установки:"
-echo "1) Ubuntu (через debootstrap)"
-echo "2) Arch Linux (через pacstrap)"
-echo "3) NixOS (через nixos-install)"
-echo "4) Gentoo (через stage3)"
-echo "5) Выход"
-read -p "Ваш выбор: " DISTRO_CHOICE
+echo -e "${BLUE}Форматирование...${NC}"
+mkfs.fat -F32 "$BOOT_P"
+mkfs.ext4 -F "$ROOT_P"
 
-case $DISTRO_CHOICE in
+echo -e "${BLUE}Монтирование в /mnt/uli...${NC}"
+mkdir -p /mnt/uli
+mount "$ROOT_P" /mnt/uli
+mkdir -p /mnt/uli/boot
+mount "$BOOT_P" /mnt/uli/boot
+
+# 3. Выбор дистра
+echo -e "\n${YELLOW}Что ставим?${NC}"
+echo "1) Ubuntu (jammy)"
+echo "2) Arch Linux"
+read -p "Выбор: " D_CHOICE
+
+case $D_CHOICE in
     1)
-        select_disk
-        prepare_disk
-        echo -e "${GREEN}Начинаю установку Ubuntu...${NC}"
-        apt update && apt install -y debootstrap
-        debootstrap --arch amd64 jammy /mnt http://archive.ubuntu.com/ubuntu/
-        echo -e "${GREEN}Базовая система Ubuntu готова в /mnt${NC}"
+        echo -e "${BLUE}Установка Ubuntu...${NC}"
+        if ! command -v debootstrap &> /dev/null; then
+            apt-get update && apt-get install -y debootstrap
+        fi
+        debootstrap --arch amd64 jammy /mnt/uli http://archive.ubuntu.com/ubuntu/
         ;;
     2)
-        select_disk
-        prepare_disk
-        echo -e "${GREEN}Начинаю установку Arch Linux...${NC}"
-        # Проверка наличия pacstrap в Live-системе
+        echo -e "${BLUE}Установка Arch...${NC}"
+        # Если мы не в Arch LiveCD, скачиваем скрипты установки
         if ! command -v pacstrap &> /dev/null; then
-            echo -e "${YELLOW}pacstrap не найден. Пытаюсь загрузить скрипты...${NC}"
-            git clone https://archlinux.org/arch-install-scripts /tmp/arch-scripts
-            export PATH=$PATH:/tmp/arch-scripts
+            echo "Загрузка инструментов Arch..."
+            curl -sL https://raw.githubusercontent.com/archlinux/arch-install-scripts/master/bin/pacstrap -o /usr/local/bin/pacstrap
+            chmod +x /usr/local/bin/pacstrap
         fi
-        pacstrap /mnt base linux linux-firmware
-        genfstab -U /mnt >> /mnt/etc/fstab
-        echo -e "${GREEN}Базовая система Arch готова в /mnt${NC}"
-        ;;
-    3)
-        echo -e "${YELLOW}Установка NixOS требует наличия Nix в текущей сессии.${NC}"
-        # Здесь будет логика загрузки бинарного файла nix
-        ;;
-    4)
-        echo -e "${YELLOW}Для Gentoo требуется загрузка stage3. В разработке...${NC}"
-        ;;
-    5)
-        exit 0
-        ;;
-    *)
-        echo "Неверный ввод."
+        # Примечание: pacstrap требует работающий pacman в системе
+        echo "Ошибка: Для Arch из-под другого дистра нужен сложный bootstrap. В процессе..."
         ;;
 esac
 
-echo -e "\n${BLUE}========================================"
-echo -e "   Установка базовых файлов завершена!"
-echo -e "   Используйте 'chroot /mnt' для настройки."
-echo -e "========================================${NC}"
+echo -e "${GREEN}Готово! Система развернута в /mnt/uli${NC}"
